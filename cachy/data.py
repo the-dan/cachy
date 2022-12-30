@@ -2,6 +2,9 @@ import os
 import time
 import datetime as dt
 import pickle
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def need_to_download(fn, expire_time_secs, force_reload = False, only_cached = False):
@@ -25,7 +28,7 @@ class Cachy:
         self.cache_failure = cache_failure
 
     def build(download_f, save_f, read_f):
-        return Cachedf(download_f, save_f, read_f, self.expire_time_secs, self.path, self.only_cached, self.force_reload, cache_failure)
+        return Cachedf(download_f, save_f, read_f, self.expire_time_secs, self.path, self.only_cached, self.force_reload, self.cache_failure)
 
     def pickle_build(self, f):
         return pickle_cached(f, self.expire_time_in_secs, self.path)
@@ -39,9 +42,17 @@ class Cachedf(object):
     """
         * only_cached -- do not call `download_f` even if it is expired. Downloads only if there's no file
         * force_reload -- call `download_f` even if it has not expired yet. Overrides `only_cached`
-
+        * cache_failure -- don't try to reload if failure is recent
+        * use_stale_on_failure -- in case download fails, read old file
     """
-    def __init__(self, download_f, save_f, read_f, expire_time_secs, path = ".", only_cached = False, force_reload = False, cache_failure = True):
+    def __init__(self, download_f, save_f, read_f,
+            expire_time_secs,
+            path = ".", 
+            only_cached = False, 
+            force_reload = False, 
+            cache_failure = True,
+            use_stale_on_failure = False
+            ):
         self.download_f = download_f
         self.save_f = save_f
         self.read_f = read_f
@@ -50,6 +61,7 @@ class Cachedf(object):
         self.force_reload = force_reload
         self.path = path
         self.cache_failure = cache_failure
+        self.use_stale_on_failure = use_stale_on_failure
     
 
     def __call__(self, *args, **kwargs):
@@ -79,7 +91,17 @@ class Cachedf(object):
         now = dt.datetime.now()
         file_expired = now - last_fetch > dt.timedelta(seconds = self.expire_time_secs) 
 
-        if (file_expired and not self.only_cached) or (not file_exists and not fail_file_exists) or self.force_reload:
+        no_file = not file_exists and not fail_file_exists
+        expired_file = (file_exists or fail_file_exists) and file_expired and not self.only_cached
+
+        if expired_file:
+            logger.debug("File expired. Will download")
+        if no_file:
+            logger.debug("No neither file nor fail file. Will download")
+        if self.force_reload:
+            logger.debug("Forcing reload. Will download")
+
+        if expired_file or no_file or self.force_reload:
             fargs = args[1:]
             try:
                 r = self.download_f(*fargs, **kwargs)
@@ -88,7 +110,17 @@ class Cachedf(object):
                 if self.cache_failure:
                     with open(fail_file, "w") as f:
                         f.write(now.isoformat())
-                raise e
+                
+                if not self.use_stale_on_failure:
+                    raise e
+
+                if no_file:
+                    logger.debug("There's no file present and download failed, nothing to read data from at all")
+                    # can't do anything here
+                    raise e
+
+                logger.debug("Using old data")
+                r = self.read_f(fn)
         else:
             r = self.read_f(fn)
         return r
