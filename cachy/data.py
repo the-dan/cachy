@@ -91,12 +91,13 @@ class Cachedf(object):
         now = dt.datetime.now()
         file_expired = now - last_fetch > dt.timedelta(seconds = self.expire_time_secs) 
 
-        no_file = not file_exists and not fail_file_exists
+        no_file = not file_exists
+        no_fail_file = not fail_file_exists
         expired_file = (file_exists or fail_file_exists) and file_expired and not self.only_cached
 
         if expired_file:
             logger.debug("File expired. Will download")
-        if no_file:
+        if no_file and no_fail_file:
             logger.debug("No neither file nor fail file. Will download")
         if self.force_reload:
             logger.debug("Forcing reload. Will download")
