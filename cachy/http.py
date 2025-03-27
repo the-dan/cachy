@@ -23,7 +23,7 @@ def flappy_network(timeout = 2.5, retries = 3, backoff_factor = 1):
     retry_strategy = Retry(
         total=retries,
         status_forcelist=[429, 500, 502, 503, 504],
-        method_whitelist=["HEAD", "GET", "OPTIONS"],
+        allowed_methods=["HEAD", "GET", "OPTIONS"],
         backoff_factor = backoff_factor
     )
     adapter = TimeoutHTTPAdapter(timeout=timeout, max_retries=retry_strategy)
